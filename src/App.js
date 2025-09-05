@@ -18,24 +18,21 @@ import {
   Modal,
   Fade
 } from "@mui/material";
-import "./App.css";
 
-// ✅ Logging Middleware (must be first thing in project)
 const LOG_API = "http://20.244.56.144/evaluation-service/logs";
-const ACCESS_TOKEN = "PUT-YOUR-TOKEN-HERE"; // 👉 replace with exam token
+const ACCESS_TOKEN = "YzuJeU";
 
 const logEvent = async (stack, level, packageType, message) => {
   try {
-    const response = await fetch(LOG_API, {
+    await fetch(LOG_API, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${ACCESS_TOKEN}`,
+        Authorization: `Bearer ${ACCESS_TOKEN}`,
       },
       body: JSON.stringify({ stack, level, package: packageType, message }),
     });
-    console.log("✅ Log sent:", level, message);
-    return await response.json();
+    console.log("✅ Log:", level, message);
   } catch (err) {
     console.error("❌ Log failed:", err);
   }
@@ -45,7 +42,6 @@ const shortenerLogEvent = (level, message) => {
   logEvent("frontend", level, "component", message);
 };
 
-// 👉 Validation helpers
 const isValidUrl = (url) => {
   try {
     new URL(url);
@@ -54,26 +50,33 @@ const isValidUrl = (url) => {
     return false;
   }
 };
+
 const isValidShortcode = (code) => /^[a-zA-Z0-9]{3,10}$/.test(code);
 
-// 👉 Simple Modal for Alerts
 const CustomAlert = ({ open, message, onClose }) => (
   <Modal open={open} onClose={onClose}>
     <Fade in={open}>
-      <Box sx={{
-        position: "absolute",
-        top: "50%",
-        left: "50%",
-        transform: "translate(-50%, -50%)",
-        width: 400,
-        bgcolor: "background.paper",
-        p: 4,
-        borderRadius: 2,
-        boxShadow: 24
-      }}>
-        <Typography variant="h6">Alert</Typography>
+      <Box
+        sx={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: 400,
+          bgcolor: "background.paper",
+          border: "2px solid #000",
+          boxShadow: 24,
+          p: 4,
+          borderRadius: 2,
+        }}
+      >
+        <Typography variant="h6" component="h2" gutterBottom>
+          Application Alert
+        </Typography>
         <Typography sx={{ mt: 2 }}>{message}</Typography>
-        <Button sx={{ mt: 2 }} variant="contained" onClick={onClose}>OK</Button>
+        <Button onClick={onClose} sx={{ mt: 2 }} variant="contained">
+          OK
+        </Button>
       </Box>
     </Fade>
   </Modal>
@@ -82,76 +85,103 @@ const CustomAlert = ({ open, message, onClose }) => (
 function App() {
   const [urls, setUrls] = useState([]);
   const [url, setUrl] = useState("");
-  const [shortcode, setShortcode] = useState("");
   const [validity, setValidity] = useState(30);
-  const [tab, setTab] = useState(0);
+  const [shortcode, setShortcode] = useState("");
+  const [currentTab, setCurrentTab] = useState(0);
   const [alert, setAlert] = useState({ open: false, message: "" });
 
-  // 👉 Redirect if shortcode is in URL
   useEffect(() => {
-    const handleHashChange = () => {
-      const code = window.location.hash.slice(2);
-      if (!code || code === "stats") return;
-
-      const entry = urls.find(u => u.shortCode === code);
-      if (entry && new Date(entry.expiry) > new Date()) {
-        const updated = urls.map(u =>
-          u.shortCode === code
-            ? { ...u, clicks: [...u.clicks, { time: new Date().toISOString() }] }
-            : u
-        );
-        setUrls(updated);
-        shortenerLogEvent("info", `Redirected ${code} → ${entry.originalUrl}`);
-        window.location.replace(entry.originalUrl);
-      } else {
-        setAlert({ open: true, message: "Invalid or expired link." });
-        shortenerLogEvent("error", `Redirect failed for ${code}`);
-        window.location.hash = "";
+    const handleUrlChange = () => {
+      const path = window.location.hash.slice(2);
+      if (path && path !== "stats") {
+        const entry = urls.find((u) => u.shortCode === path);
+        if (entry && new Date(entry.expiry) > new Date()) {
+          const updatedUrls = urls.map((item) =>
+            item.shortCode === path
+              ? {
+                  ...item,
+                  clicks: [
+                    ...item.clicks,
+                    {
+                      timestamp: new Date().toISOString(),
+                      source: "Web",
+                      location: "India",
+                    },
+                  ],
+                }
+              : item
+          );
+          setUrls(updatedUrls);
+          window.location.replace(entry.originalUrl);
+          shortenerLogEvent("info", `Redirected ${path} → ${entry.originalUrl}`);
+        } else {
+          setAlert({ open: true, message: "Link not found or expired." });
+          shortenerLogEvent("error", `Redirect failed for ${path}`);
+          window.location.hash = "";
+        }
       }
     };
-    window.addEventListener("hashchange", handleHashChange);
-    handleHashChange();
-    return () => window.removeEventListener("hashchange", handleHashChange);
+    window.addEventListener("hashchange", handleUrlChange);
+    handleUrlChange();
+    return () => window.removeEventListener("hashchange", handleUrlChange);
   }, [urls]);
 
-  // 👉 Handle Shortening
   const handleShorten = () => {
+    shortenerLogEvent("debug", "Shorten URL clicked.");
     if (!isValidUrl(url)) {
-      setAlert({ open: true, message: "Enter a valid URL" });
-      shortenerLogEvent("error", "Invalid URL input");
+      setAlert({ open: true, message: "Please enter a valid URL." });
+      shortenerLogEvent("error", "Invalid URL entered.");
       return;
     }
     if (shortcode && !isValidShortcode(shortcode)) {
-      setAlert({ open: true, message: "Shortcode must be 3-10 letters/numbers" });
-      shortenerLogEvent("error", "Invalid shortcode input");
+      setAlert({ open: true, message: "Invalid shortcode. 3-10 alphanumeric only." });
+      shortenerLogEvent("error", "Invalid shortcode entered.");
       return;
     }
     if (urls.length >= 5) {
-      setAlert({ open: true, message: "Max 5 URLs allowed" });
-      shortenerLogEvent("warn", "Max URL limit reached");
+      setAlert({ open: true, message: "Only 5 URLs allowed." });
+      shortenerLogEvent("warn", "URL limit exceeded.");
       return;
     }
-    if (urls.some(u => u.shortCode === shortcode)) {
-      setAlert({ open: true, message: "Shortcode already in use" });
-      shortenerLogEvent("error", "Shortcode collision");
+    const codeInUse = urls.some((item) => item.shortCode === shortcode);
+    if (shortcode && codeInUse) {
+      setAlert({ open: true, message: `Shortcode "${shortcode}" already in use.` });
+      shortenerLogEvent("error", `Collision for shortcode: ${shortcode}`);
       return;
     }
+    const newCode = shortcode || Math.random().toString(36).substring(2, 8);
+    const expiryDate = new Date(Date.now() + (validity || 30) * 60000);
+    const newUrlEntry = {
+      originalUrl: url,
+      shortCode: newCode,
+      expiry: expiryDate.toISOString(),
+      clicks: [],
+    };
+    setUrls((prev) => [...prev, newUrlEntry]);
+    shortenerLogEvent("info", `Shortened ${url} → ${newCode}`);
+    setShortcode("");
+    setUrl("");
+    setValidity(30);
+  };
 
-    const code = shortcode || Math.random().toString(36).substring(2, 7);
-    const expiry = new Date(Date.now() + validity * 60000).toISOString();
-    const entry = { originalUrl: url, shortCode: code, expiry, clicks: [] };
-    setUrls([...urls, entry]);
-
-    setUrl(""); setShortcode(""); setValidity(30);
-    shortenerLogEvent("info", `Shortened ${url} → ${code}`);
+  const handleTabChange = (event, newValue) => {
+    setCurrentTab(newValue);
+    window.location.hash = newValue === 0 ? "" : "stats";
   };
 
   return (
-    <Box>
+    <Box sx={{ flexGrow: 1 }}>
       <AppBar position="static">
         <Toolbar>
-          <Typography sx={{ flexGrow: 1 }}>URL Shortener</Typography>
-          <Tabs value={tab} onChange={(_, v) => { setTab(v); window.location.hash = v ? "stats" : ""; }}>
+          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+            URL Shortener
+          </Typography>
+          <Tabs
+            value={currentTab}
+            onChange={handleTabChange}
+            textColor="inherit"
+            indicatorColor="secondary"
+          >
             <Tab label="Shortener" />
             <Tab label="Statistics" />
           </Tabs>
@@ -159,58 +189,114 @@ function App() {
       </AppBar>
 
       <Container maxWidth="md" sx={{ mt: 4 }}>
-        <Paper sx={{ p: 3 }}>
-          {tab === 0 && (
+        <Paper elevation={3} sx={{ p: 4 }}>
+          {currentTab === 0 && (
             <Box>
+              <Typography variant="h5" gutterBottom>
+                Shorten a URL
+              </Typography>
               <TextField
                 label="Long URL"
-                fullWidth margin="normal"
-                value={url} onChange={e => setUrl(e.target.value)}
-              />
-              <TextField
-                label="Custom Shortcode (3-10 chars)"
-                fullWidth margin="normal"
-                value={shortcode} onChange={e => setShortcode(e.target.value)}
+                fullWidth
+                margin="normal"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
               />
               <TextField
                 label="Validity (minutes)"
                 type="number"
-                fullWidth margin="normal"
-                value={validity} onChange={e => setValidity(Number(e.target.value))}
+                fullWidth
+                margin="normal"
+                value={validity}
+                onChange={(e) => setValidity(e.target.value)}
               />
-              <Button variant="contained" sx={{ mt: 2 }} onClick={handleShorten}>Shorten</Button>
-              <List sx={{ mt: 3 }}>
-                {urls.map((u, i) => (
-                  <ListItem key={i}>
-                    <ListItemText
-                      primary={<a href={`#/${u.shortCode}`}>{`http://localhost:3000/#/${u.shortCode}`}</a>}
-                      secondary={`Original: ${u.originalUrl} | Expires: ${new Date(u.expiry).toLocaleString()}`}
-                    />
-                  </ListItem>
-                ))}
-              </List>
+              <TextField
+                label="Custom Shortcode (3-10 chars)"
+                fullWidth
+                margin="normal"
+                value={shortcode}
+                onChange={(e) => setShortcode(e.target.value)}
+              />
+              <Button
+                variant="contained"
+                onClick={handleShorten}
+                sx={{ mt: 2 }}
+                disabled={!url}
+              >
+                Shorten
+              </Button>
+              <Box sx={{ mt: 4 }}>
+                <Typography variant="h6">Your Shortened URLs ({urls.length}/5)</Typography>
+                <List>
+                  {urls.map((entry, index) => (
+                    <ListItem key={index} divider>
+                      <ListItemText
+                        primary={
+                          <a
+                            href={`#/${entry.shortCode}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {`http://localhost:3000/#/${entry.shortCode}`}
+                          </a>
+                        }
+                        secondary={`Original: ${entry.originalUrl} | Expires: ${new Date(
+                          entry.expiry
+                        ).toLocaleString()}`}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              </Box>
             </Box>
           )}
-
-          {tab === 1 && (
+          {currentTab === 1 && (
             <Box>
-              {urls.map((u, i) => (
-                <Card key={i} sx={{ mb: 2 }}>
-                  <CardContent>
-                    <Typography>Shortcode: {u.shortCode}</Typography>
-                    <Typography>URL: {u.originalUrl}</Typography>
-                    <Typography>Clicks: {u.clicks.length}</Typography>
-                    <Typography>Expiry: {new Date(u.expiry).toLocaleString()}</Typography>
-                  </CardContent>
-                </Card>
-              ))}
-              {urls.length === 0 && <Typography>No data yet.</Typography>}
+              <Typography variant="h5" gutterBottom>
+                URL Statistics
+              </Typography>
+              {urls.length > 0 ? (
+                <List>
+                  {urls.map((entry, index) => (
+                    <Card key={index} sx={{ mb: 2 }}>
+                      <CardContent>
+                        <Typography variant="h6">Shortcode: {entry.shortCode}</Typography>
+                        <Typography>Original URL: {entry.originalUrl}</Typography>
+                        <Typography>Clicks: {entry.clicks.length}</Typography>
+                        <Typography>
+                          Expires: {new Date(entry.expiry).toLocaleString()}
+                        </Typography>
+                        {entry.clicks.length > 0 && (
+                          <Box sx={{ mt: 2 }}>
+                            <Typography variant="subtitle1">Click Details:</Typography>
+                            <List dense>
+                              {entry.clicks.map((click, cIndex) => (
+                                <ListItem key={cIndex}>
+                                  <ListItemText
+                                    primary={`Time: ${new Date(click.timestamp).toLocaleString()}`}
+                                    secondary={`Source: ${click.source} | Location: ${click.location}`}
+                                  />
+                                </ListItem>
+                              ))}
+                            </List>
+                          </Box>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </List>
+              ) : (
+                <Typography>No URLs shortened yet.</Typography>
+              )}
             </Box>
           )}
         </Paper>
       </Container>
-
-      <CustomAlert open={alert.open} message={alert.message} onClose={() => setAlert({ open: false, message: "" })} />
+      <CustomAlert
+        open={alert.open}
+        message={alert.message}
+        onClose={() => setAlert({ open: false, message: "" })}
+      />
     </Box>
   );
 }
